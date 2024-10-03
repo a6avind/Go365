@@ -8,9 +8,9 @@
 
 Go365 is a tool designed to perform user enumeration* and password guessing attacks on organizations that use Office365 (now/soon Microsoft365). Go365 uses a unique SOAP API endpoint on login.microsoftonline.com that most other tools do not use. When queried with an email address and password, the endpoint responds with an Azure AD Authentication and Authorization code. This code is then processed by Go365 and the result is printed to screen or an output file.
 
-\* User enumeration is performed in conjunction with a password guess attempt. Thus, there is no specific flag or funtionality to perform only user enumeration. Instead, conduct your first password guessing attack, then parse the results for valid users.
+\* User enumeration is performed in conjunction with a password guess attempt. Thus, there is no specific flag or functionality to perform only user enumeration. Instead, conduct your first password guessing attack, then parse the results for valid users.
 
-##### Read these three bullets!
+##### Read these three bullets
 
 - This tool might not work on **all** domains that utilize o365. Tests show that it works with most federated domains. Some domains will only report valid users even if a valid password is also provided. Your results may vary!
 - The domains this tool was tested on showed that it did not actually lock out accounts after multiple password failures. Your results may vary!
@@ -58,6 +58,7 @@ Usage:
   Required - Endpoint:
 
     -endpoint [rst or graph]    Specify which endpoint to use
+                                : (-endpint user)    https://login.microsoftonline.com/common/GetCredentialType. HTTP POST request with JSON Response
                                 : (-endpoint rst)   *Classic Go365!* login.microsoftonline.com/rst2.srf. SOAP XML request with XML response
                                 : (-endpoint graph)  login.microsoft.com/common/oauth2/token. HTTP POST request with JSON Response
 
@@ -88,7 +89,7 @@ Usage:
                                 : Be careful of duplicate usernames!
                                 : (-up ./userpasslist.txt)
 
-  Required/Optional - Domain:
+  Required - Domain:
 
     -d <string>                 Domain to test
                                 : Use this if the username or username list does not include "@targetcompany.com"
@@ -124,6 +125,8 @@ Usage:
                                 : check this out: https://bigb0sss.github.io/posts/redteam-rotate-ip-aws-gateway/
                                 : (-url https://notrealgetyourown.execute-api.us-east-2.amazonaws.com/login)
 
+    -cloud                      : When spraying companies attached to US Tenants (https://login.microsoftonline.us/)
+
     -debug                      Debug mode.
                                 : Print xml response
 ```
@@ -131,6 +134,7 @@ Usage:
 ### Examples
 
 ```
+  ./Go365 -endpoint user -ul ./user_list.txt -d pwnthisfakedomain.com -o valid_users.txt
   ./Go365 -endpoint rst -ul ./user_list.txt -p 'coolpasswordbro!123' -d pwnthisfakedomain.com
   ./Go365 -endpoint graph -ul ./user_list.txt -p 'coolpasswordbro!123' -d pwnthisfakedomain.com -w 5
   ./Go365 -endpoint rst -up ./userpass_list.txt -delay 3600 -d pwnthisfakedomain.com -w 5 -o Go365output.txt
