@@ -68,6 +68,7 @@ const (
     -debug                      Debug mode.
                                 : Print xml response
 	  -cloud				          		: When spraying companies attached to US Tenants (https://login.microsoftonline.us/)
+    -fireprox                   : Use AWS API Gateway to rotate IPs
 
  Examples:
   ./Go365 -endpoint user -ul ./user_list.txt -d pwnthisfakedomain.com -o valid_users.txt

