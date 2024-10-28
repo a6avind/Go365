@@ -149,6 +149,7 @@ type flagVars struct {
 	flagDebug         bool
 	flagcloud         string
 	flagFireprox      bool
+	flagMethode       string
 }
 
 func flagOptions() *flagVars {
@@ -169,6 +170,7 @@ func flagOptions() *flagVars {
 	flagDebug := flag.Bool("debug", false, "")
 	flagcloud := flag.String("cloud", "com", "")
 	flagFireprox := flag.Bool("fireprox", false, "")
+	flagMethode := flag.String("methode", "", "")
 	flag.Parse()
 	return &flagVars{
 		flagHelp:          *flagHelp,
@@ -188,6 +190,7 @@ func flagOptions() *flagVars {
 		flagDebug:         *flagDebug,
 		flagcloud:         *flagcloud,
 		flagFireprox:      *flagFireprox,
+		flagMethode:       *flagMethode,
 	}
 }
 
@@ -516,7 +519,7 @@ func main() {
 	color.Set(color.FgCyan)
 	switch {
 	case opt.flagEndpoint == "user":
-		doUser(usernameList, opt.flagDomain, opt.flagcloud)
+		doUser(usernameList, opt.flagDomain, opt.flagcloud, opt.flagMethode)
 		return
 	case opt.flagEndpoint == "rst":
 		fmt.Println("[i] Using the rst endpoint...")

@@ -7,7 +7,6 @@ import (
 	"io"
 	"log"
 	"net/http"
-	"os"
 	"regexp"
 	"slices"
 	"strings"
@@ -91,21 +90,7 @@ func douserEnumOneDrive(user string) {
 
 }
 
-func doTenantOneDrive(tenant, domain string) string {
-	url := fmt.Sprintf("https://%s-my.sharepoint.com/personal/TESTUSER_%s/_layouts/15/onedrive.aspx", tenant, strings.ReplaceAll(domain, ".", "_"))
-	fmt.Println(url)
-	resp, err := http.Head(url)
-	if err == nil && resp.StatusCode == http.StatusOK {
-		defer resp.Body.Close()
-		fmt.Printf("Tenant \"%s\" confirmed via OneDrive: %s", tenant, url)
-		os.Exit(0)
-		return tenant
-	}
-	fmt.Println("Hosted OneDrive instance for " + tenant + " does not exist")
-	return ""
-}
-
-func doGetTenantDomain(domain string) {
+func doGetTenantDomains(domain string) {
 
 	uri := "https://autodiscover-s.outlook.com/autodiscover/autodiscover.svc"
 	body := (`<?xml version="1.0" encoding="utf-8"?>
@@ -145,15 +130,18 @@ func doGetTenantDomain(domain string) {
 		doError("failed to read response body: %w", err.Error())
 	}
 	println(string(responseBody))
-	os.Exit(0)
-	// Use regex to find domains
 	re := regexp.MustCompile(`<Domain>([^<]*)</Domain>`)
 	matches := re.FindAllStringSubmatch(string(responseBody), -1)
 	for _, match := range matches {
+		tenant = strings.ReplaceAll(match[1], ".onmicrosoft.com", "")
 		if len(match) > 1 && strings.Contains(match[1], ".onmicrosoft.com") {
-			tenant = doTenantOneDrive(strings.ReplaceAll(match[1], ".onmicrosoft.com", ""), domain)
-			if tenant != "" {
-				return
+			url := fmt.Sprintf("https://%s-my.sharepoint.com/personal/TESTUSER_%s/_layouts/15/onedrive.aspx", tenant, strings.ReplaceAll(domain, ".", "_"))
+			resp, err := http.Head(url)
+			defer resp.Body.Close()
+			if err == nil && resp.StatusCode == http.StatusOK {
+				fmt.Println("Tenant " + tenant + " confirmed via OneDrive: " + url)
+			} else {
+				fmt.Println("Hosted OneDrive instance for " + tenant + " does not exist")
 			}
 		}
 	}
@@ -161,7 +149,7 @@ func doGetTenantDomain(domain string) {
 	fmt.Println("no domain with onmicrosoft.com suffix found")
 }
 
-func doUser(usernameList []string, domain, cloud string) {
+func doUser(usernameList []string, domain, cloud, methode string) {
 	// if_exists_result_codes := map[int]string{
 	// 	-1: "UNKNOWN_ERROR",
 	// 	0:  "VALID_USERNAME",
@@ -175,7 +163,7 @@ func doUser(usernameList []string, domain, cloud string) {
 	fmt.Println(color.CyanString("[i] Starting User enumeration\n"))
 	fmt.Println(color.CyanString("[i] Using https://login.microsoftonline." + cloud + "/common/GetCredentialType to verify emails\n"))
 
-	doGetTenantDomain(domain)
+	doGetTenantDomains(domain)
 
 	resp, err := http.Get("https://login.microsoftonline." + cloud + "/getuserrealm.srf?login=user@" + domain)
 	if err != nil {
@@ -205,8 +193,10 @@ func doUser(usernameList []string, domain, cloud string) {
 	for _, username := range usernameList {
 
 		// Build a logic to use different endpoints based on the user input
-		doUserEnumCredType(username, cloud)
-		// douserEnumOneDrive(username)
-
+		if methode == "OneDrive" {
+			douserEnumOneDrive(username)
+		} else if methode == "GetCredentialType" {
+			doUserEnumCredType(username, cloud)
+		}
 	}
 }

